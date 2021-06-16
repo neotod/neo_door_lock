@@ -1,5 +1,6 @@
 */.builds
 */.vscode
 */__pycache__/
+/datas/
 enc_key.txt
 todos.md
