@@ -4,3 +4,10 @@ class Smart_Lock:
         self.oreport_on = ontime_report_on
         self.lreport_on = longtime_report_on
         self.phone_number = phone_number
+
+class User:
+    def __init__(self, name, lastname, username, phone_number=0):
+        self.name = name
+        self.lastname = lastname
+        self.username = username
+        self.phone_number = phone_number
