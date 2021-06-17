@@ -1,6 +1,5 @@
 */.builds
 */.vscode
 */__pycache__/
-/telegram_bot/datas
 enc_key.txt
 todos.md
