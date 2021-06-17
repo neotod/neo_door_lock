@@ -6,7 +6,7 @@ class Smart_Lock:
         self.phone_number = phone_number
 
 class User:
-    def __init__(self, name, lastname, username, phone_number=0):
+    def __init__(self, name: str, lastname: str, username:str, phone_number :int=0):
         self.name = name
         self.lastname = lastname
         self.username = username
