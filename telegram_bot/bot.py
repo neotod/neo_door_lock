@@ -1,12 +1,25 @@
-from time import sleep
-from pandas import read_csv
-from hashlib import sha256
+import os
+import re
+import pandas
+import hashlib
+import jdatetime
 
 import components as compos
-from pages import Pages, make_pages, bot_pages
+from pages import (
+    Pages, 
+    Buttons, 
+    bot_pages, 
+    make_pages, 
+    text_handling_pages,
+    settings_switch_btns, 
+) 
 
 from telegram import (
-    Update, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup, Message
+    Update, 
+    Message,
+    ReplyKeyboardMarkup, 
+    InlineKeyboardButton, 
+    InlineKeyboardMarkup, 
 )
 from telegram.ext import (
     Updater,
@@ -18,16 +31,17 @@ from telegram.ext import (
 from telegram.constants import PARSEMODE_HTML
 
 
-TOKEN = "1657461061:AAGK3BxAacBzXAi4Til20h0ax-Y0b1CDEwg"
+TOKEN = "TOKEN"
 MAX_SESSION_TIME = 5 * 60 # 5 mins
+DOCUMENT_DESTRUCTION_TIME = 30
 
 
 make_pages()
 
-lock = compos.Smart_Lock()
+smart_lock = compos.Smart_Lock()
 current_user = None
 
-cur_page_id = Pages.main
+cur_page_id = Pages.welcome
 
 login_username_valid = True
 login_password_valid = True
@@ -35,80 +49,129 @@ login_password_valid = True
 login_cur_user_index = 0
 
 inline_query_message = None # the main message which is getting updated constantly
-chat_id = 0
+chat_id = 0 # current chat (user with bot) id
+
+whereami = ['خانه🏠']
 
 def start(update, context):
-    global cur_page_id, inline_query_message
+    global cur_page_id, inline_query_message, whereami, chat_id
 
     if not current_user:
         cur_page_id = Pages.welcome
-    else:
-        cur_page_id = Pages.main
-        chat_id = update.message.chat.id
 
+    else:
+        user_obj = update.effective_user
+        if user_obj.username != current_user.telegram_obj.username: # only one user can use the bot at the same time
+            update.message.reply_text(text='⚠کاربر دیگری در حال استفاده از بات است، لطفا حداکثر پس از ۵ دقیقه دیگر مراجعه کنید.')
+            return
+
+        else:
+            cur_page_id = Pages.main
+            chat_id = update.message.chat.id
+            inline_query_message.delete()
+            inline_query_message = None
+            
+    whereami = ['خانه🏠']
+    whereami_string = '<b>' + ' > '.join(whereami) + '</b>\n'
     description = bot_pages[cur_page_id].description
-    description = get_roadmap_string() + description
+    description = whereami_string + description
     inline_btns = get_page_inline_btns(bot_pages[cur_page_id])
 
-    update.message.reply_html(description, reply_markup=InlineKeyboardMarkup(inline_btns))
+    if update.message:
+        inline_query_message = update.message.reply_html(description, reply_markup=InlineKeyboardMarkup(inline_btns))
+    else:
+        query = update.callback_query
+        chat_id = query.message.chat_id
+        inline_query_message = query.bot.send_message(chat_id, description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
+        query.answer()
 
 def help_(update, context):
     return
 
 
-def inline_queries(update, context): # main inline queries handler
-    global inline_query_message, current_user
+def inline_queries(update, context):
+    '''main inline queries handler'''
+
+    global inline_query_message, current_user, cur_page_id, smart_lock, whereami
     global login_username_valid, login_password_valid
 
-
     query = update.callback_query
-    inline_query_message = query.message
-    data = query.data # data is button name, so it's just usefull for finding the next page's id
 
-    set_next_page(data)
+    if not inline_query_message:
+        inline_query_message = query.message
+
+    if query.message != inline_query_message:
+        query.answer(text='⚠لطفا با آخرین پیام از طرف بات، با بات کار کنید!', show_alert=True)
+        return
+
+    button_id = int(query.data) # data is id of the button that was clicked by user
+    inline_query_message = query.message
+    
+    if current_user:
+        user_obj = update.effective_user
+        if user_obj.username != current_user.telegram_obj.username: # only one user can use the bot at the same time
+            query.answer()
+            query.edit_message_text(text='⚠کاربر دیگری در حال استفاده از بات است، لطفا حداکثر پس از ۵ دقیقه دیگر مراجعه کنید.')
+            return
+    else:
+        if button_id != Buttons.login and cur_page_id != Pages.login_username and cur_page_id != Pages.login_password:
+            start(update, context)
+            return
+        elif (button_id != Buttons.login and button_id != Buttons.back) and (cur_page_id == Pages.welcome or cur_page_id == Pages.login_username or cur_page_id == Pages.login_password):
+            query.answer(text='⚠لطفا اول لاگین کنید!', show_alert=True)
+            return
 
     chat_id = inline_query_message.chat_id
-    set_session_removal_task(context, chat_id)
+    set_session_removal_task(context, chat_id) # everytime user interacts with the bot, session removal task will get removed
 
-    if 'on' in data or 'off' in data:
-        settings_update(data)
 
-    elif data == 'logout':
-        current_user = None
+    if button_id == Buttons.logout or (button_id == Buttons.back and (cur_page_id == Pages.login_username or cur_page_id == Pages.login_password)):
+        logout(context)
+    
+    elif button_id == Buttons.day_report or button_id == Buttons.month_report or button_id == Buttons.year_report:
+        file_made = output_report(update, context, button_id)
 
-    elif data == 'back':
-        if cur_page_id == Pages.login_username or cur_page_id == Pages.login_password:
-            login_username_valid = True
-            login_password_valid = True
+        if file_made:
+            remove_task_if_exists(context, 'temp_file_remove')
 
-    elif data == 'logout':
-        remove_task_if_exists(context, chat_id)
+            task = lambda _: os.remove('datas/temp.csv')
+            context.job_queue.run_once(task, 5, name='temp_file_remove')
 
-    cur_page = bot_pages[cur_page_id]
-    inline_btns = get_page_inline_btns(cur_page)
-    description = cur_page.description
+        if whereami[-1] == 'گزارش📃':
+            whereami.pop()
 
-    if cur_page_id == Pages.setting_lock:
-        description += '\nقلف هوشمند: '
-        description += 'فعال✅' if lock.on else 'غیرفعال❌'
+    elif (cur_page_id == Pages.settings_lock or cur_page_id == Pages.settings_report) and button_id in settings_switch_btns:
+        settings_update(button_id)
 
-    elif cur_page_id == Pages.setting_report:
-        description += '\nگزارش لحظه ای: '
-        description += 'فعال✅' if lock.oreport_on else 'غیرفعال❌'
+    elif button_id == Buttons.back:
+        whereami.pop(-1)
+        
+    else:
+        button_text = bot_pages[cur_page_id].buttons[button_id].text
+        whereami.append(button_text)
 
-        description += '\nگزارش بلند مدت: '
-        description += 'فعال✅' if lock.lreport_on else 'غیرفعال❌'
+    next_page_id = set_next_page(button_id)
+    cur_page_id = next_page_id
 
-    description = f'<b>{get_roadmap_string()}</b>' + description
+    next_page = bot_pages[next_page_id]
+    inline_btns = get_page_inline_btns(next_page)
+    description = next_page.description
+
+    description = settings_description_update(description)
+    
+    whereami_string = '<b>' + ' > '.join(whereami) + '</b>\n'
+    description = whereami_string + description
 
     query.answer()
     query.edit_message_text(description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
 
-def text(update, context): # this function handles any other user text input
-    global inline_query_message, cur_page_id, current_user
+def text(update, context):
+    '''main text input handler'''
+
+    global inline_query_message, cur_page_id, current_user, whereami
     global login_username_valid, login_password_valid
 
-    if cur_page_id != Pages.login_password and cur_page_id != Pages.login_username:
+    if cur_page_id not in text_handling_pages:
         update.message.delete()
         return
 
@@ -116,20 +179,21 @@ def text(update, context): # this function handles any other user text input
     cur_page = bot_pages[cur_page_id]
     inline_btns = get_page_inline_btns(cur_page)
 
-    description = cur_page.description
-    description += 'لطفا صبر کنید...⏳'
-    description = f'<b>{get_roadmap_string()}</b>' + description
+    if cur_page_id == Pages.login_username or cur_page_id == Pages.login_password: # login part
+        description = cur_page.description
+        description += 'لطفا صبر کنید...⏳'
+        whereami_string = '<b>' + ' > '.join(whereami) + '</b>\n'
+        description = whereami_string + description
 
-    inline_query_message.edit_text(description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
+        inline_query_message.edit_text(description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
 
-    message = update.message.text
-    chat_id = update.message.chat_id
-    update.message.delete()
+        message = update.message.text
+        chat_id = update.message.chat_id
+        update.message.delete()
 
-    if cur_page_id == Pages.login_username or cur_page_id == Pages.login_password:
         if cur_page_id == Pages.login_username:
             login_username_valid = True
-            login_password_valid = True
+            login_password_valid = False
             data = 'username'
 
         elif cur_page_id == Pages.login_password:
@@ -138,11 +202,24 @@ def text(update, context): # this function handles any other user text input
 
         validate_input({data: message})
 
-        if current_user: # login was successful.
+        if login_username_valid and login_password_valid: # login was successful.
+            cur_page_id = Pages.main
+            user_obj = update.effective_user
+            current_user = compos.User(user_obj, 'neotod', 'soltani', 'neotod')
+
+            if smart_lock.lreport_on:
+                event = compos.Event(compos.Events.user_login, 'ورود کاربر به تلگرام')
+                event_info = f'username: {current_user.username}'
+                report(event, event_info)
+            
             set_session_removal_task(context, chat_id)
             start(update, context)
             
         else:
+            if cur_page_id == Pages.login_username and login_username_valid:
+                cur_page_id = Pages.login_password # username was valid go to password page
+                login_password_valid = True
+
             cur_page = bot_pages[cur_page_id]
             inline_btns = get_page_inline_btns(cur_page)
             description = cur_page.description
@@ -155,103 +232,143 @@ def text(update, context): # this function handles any other user text input
                 description += '\n 🛑 رمز عبور اشتباه هست.'
                 description += '\n دوباره وارد کنید'
 
-            description = f'<b>{get_roadmap_string()}</b>' + description
+            whereami_string = '<b>' + ' > '.join(whereami) + '</b>\n'
+            description = whereami_string + description
             inline_query_message.edit_text(description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
 
-
-def set_next_page(data):
-    global cur_page_id
-
-    if cur_page_id == Pages.report:
-        cur_page_id = Pages.main
-
-    elif 'off' in data or 'on' in data:
-        if data == 'lock_off' or data == 'lock_on':
-            cur_page_id = Pages.setting_lock
-                
-        elif 'ontime_report' in data or 'longtime_report' in data:
-            cur_page_id = Pages.setting_report
-
-    elif 'login' in data:
-        cur_page_id = Pages.login_username if 'username' in data else Pages.login_password
-
-    elif not current_user:
-        cur_page_id = Pages.welcome
-
-    elif data == 'back':
-        cur_page_id = bot_pages[cur_page_id].prev_page_id
-
-    elif data == 'logout':
-        cur_page_id = Pages.welcome
-
-    else:
-        cur_page_id = Pages.main # just random thing for init
-        
-        for page in bot_pages.values():
-            if page.button_name == data:
-                cur_page_id = page.id_
-                break
-
 def get_page_inline_btns(page):
-    buttons = page.buttons
+    global smart_lock
+
     inline_btns = []
-    for btns_row in buttons:
-        inline_btns.append([])
-
-        for btn in btns_row:
-            if btn == 'lock' or btn == 'ontime_report' or btn == 'longtime_report':
-                option_on = lock.on if btn == 'lock' else (lock.oreport_on if btn == 'ontime_report' else lock.lreport_on) # that's neat!
-                another_state = 'off' if option_on else 'on'
-                
-                inline_btn = InlineKeyboardButton(btns_row[btn][another_state], callback_data=f'{btn}_{another_state}')
-                # callback_data = lock_on | lock_off | ontime_report_off | ontime_report_on | longtime_report_on | longtime_report_off
-
-            else:
-                inline_btn = InlineKeyboardButton(btns_row[btn], callback_data=btn)
-            
-            inline_btns[-1].append(inline_btn)
-
+    for btn_id, btn in page.buttons.items():
+        
+        inline_btn = InlineKeyboardButton(btn.text, callback_data=int(btn.id_))
+        try:
+            inline_btns[btn.row_index].append(inline_btn)
+        except IndexError:
+            inline_btns.append([])
+            inline_btns[btn.row_index].append(inline_btn)
 
     return inline_btns
 
-def settings_update(data):
-    if data == 'lock_off' or data == 'lock_on':
-        lock.on = False if 'off' in data else True
-                
-    elif 'ontime_report' in data or 'longtime_report' in data:
-        if 'ontime_report' in data:
-            lock.oreport_on = False if 'off' in data else True
-
-        elif 'longtime_report' in data:
-            lock.lreport_on = False if 'off' in data else True
-
-def setting_lock(update, context):
-    pass
-
-def report(update, context):
-    pass
-
-def get_roadmap_string():
+def set_next_page(button_id):
     global cur_page_id
 
-    all_pages = []
-    cur_page = bot_pages[cur_page_id]
-    prev_page_id = cur_page.prev_page_id
+    try:
+        next_page_id = bot_pages[cur_page_id].buttons[button_id].next_page_id
+    except KeyError as e: # user is interacting with bot thorugh another message (old message maybe)
+        print('key error ', e)
+        cur_page_id = next_page_id # don't change
 
-    while prev_page_id != 0:
-        prev_page = bot_pages[prev_page_id]
-        all_pages.append(prev_page.buttons[0][cur_page.button_name])
+    return next_page_id
 
-        cur_page = prev_page
-        prev_page_id = cur_page.prev_page_id
 
-    all_pages.append('خانه🏠')
+def settings_update(button_id):
+    global smart_lock, cur_page_id
 
-    all_pages.reverse()
-    roadmap_string = ' > '.join(all_pages)
-    roadmap_string = roadmap_string + '\n'
+    if button_id == Buttons.settings_lock_switch:
+        smart_lock.on = False if smart_lock.on else True # switch the state
+        next_btn = settings_switch_btns[Buttons.settings_lock_off] if smart_lock.on else settings_switch_btns[Buttons.settings_lock_on]
 
-    return roadmap_string
+        if smart_lock.lreport_on:
+            event = compos.Event(compos.Events.lock_state_change, 'تغییر وضعیت قفل')
+            event_info = 'current_state: '
+            event_info += 'on' if smart_lock.on else 'off'
+            report(event, event_info)
+                
+    elif button_id == Buttons.settings_lreport_switch:
+        smart_lock.lreport_on = False if smart_lock.lreport_on else True # switch the state
+        next_btn = settings_switch_btns[Buttons.settings_lreport_off] if smart_lock.lreport_on else settings_switch_btns[Buttons.settings_lreport_on]
+
+    elif button_id == Buttons.settings_oreport_switch:
+        smart_lock.oreport_on = False if smart_lock.oreport_on else True # switch the state
+        next_btn = settings_switch_btns[Buttons.settings_oreport_off] if smart_lock.oreport_on else settings_switch_btns[Buttons.settings_oreport_on]
+
+    bot_pages[cur_page_id].buttons[button_id].text = next_btn.text
+
+def settings_description_update(description):
+    if cur_page_id == Pages.settings_lock:
+        description += '\n<b>قلف هوشمند: </b>'
+        description += 'فعال✅' if smart_lock.on else 'غیرفعال❌'
+
+    elif cur_page_id == Pages.settings_report:
+        description += '\n<b>گزارش لحظه ای: </b>'
+        description += 'فعال✅' if smart_lock.oreport_on else 'غیرفعال❌'
+
+        description += '\n<b>گزارش بلند مدت: </b>'
+        description += 'فعال✅' if smart_lock.lreport_on else 'غیرفعال❌'
+
+    return description
+
+def output_report(update, context, button_id: Buttons):
+    '''report_interval = day | week | month'''
+
+    global inline_query_message
+
+    df = pandas.read_csv('datas/report.csv')
+    records_dates = list(df['تاریخ'])
+    cur_date = jdatetime.datetime.now()
+
+    query = update.callback_query
+    chat_id = query.message.chat_id
+
+    same_date_indexes = []
+    for i in range(len(records_dates)):
+        year, month, day = [int(part) for part in records_dates[i].split('-')]
+
+        is_same_date = False
+        if year == cur_date.year:
+            if button_id == Buttons.year_report:
+                is_same_date = True
+            else:
+                if month == cur_date.month:
+                    if button_id == Buttons.month_report:
+                        is_same_date = True
+                    else:
+                        if day == cur_date.day:
+                            if button_id == Buttons.day_report:
+                                is_same_date = True
+
+        if is_same_date:
+            same_date_indexes.append(i)
+
+    if same_date_indexes:
+        records = [list(df.loc[i]) for i in same_date_indexes]
+
+        new_df = pandas.DataFrame([list(df.columns)])
+        for record in records:
+            new_df = new_df.append([list(record)])
+
+        new_df.to_csv('datas/temp.csv', sep='\t', encoding='utf-16', index=False, header=False)
+
+        with open('datas/temp.csv', 'rb') as f:
+
+            file_name = f'report_{str(cur_date)[:-7]}.csv'.replace(':', '_').replace(' ', '_')
+
+            if button_id == Buttons.year_report:
+                file_name = f'year_{file_name}'
+            elif button_id == Buttons.month_report:
+                file_name = f'month_{file_name}'
+            elif button_id == Buttons.day_report:
+                file_name = f'day_{file_name}'
+
+            message = query.bot.send_document(chat_id, f, filename=file_name, caption='🛑 این فایل پس از سی ثانیه بصورت خودکار پاک خواهد شد.')
+            set_message_removal_task(context, message, DOCUMENT_DESTRUCTION_TIME)
+        
+        return True
+    
+    else:
+        message = query.bot.send_message(chat_id, text='در این مدت زمان گزارشی ثبت نشده است.')
+        set_message_removal_task(context, message, DOCUMENT_DESTRUCTION_TIME)
+        return False
+
+def report(event: compos.Event, more_info: str):
+    event_text = event.name # event names: تغییر وضعیت قفل | ورود کاربر به تلگرام | ورود
+
+    now_date = str(jdatetime.datetime.now().date())
+    now_time = str(jdatetime.datetime.now().time())[:-7]
+    df = pandas.DataFrame([[now_date, now_time, event_text, more_info]])
+    df.to_csv('datas/report.csv', mode='a', encoding='utf-8-sig', header=False, index=False)
 
 def validate_input(data: dict):
     global cur_page_id, current_user
@@ -259,7 +376,7 @@ def validate_input(data: dict):
 
     if 'username' in data:
         username = data['username'].lower()
-        users = read_csv('datas/users.csv')
+        users = pandas.read_csv('datas/users.csv')
         usernames = dict(users.username)
 
         if username not in usernames.values():
@@ -269,19 +386,12 @@ def validate_input(data: dict):
 
     elif 'password' in data:
         password = data['password']
-        pass_hash = sha256(password.encode()).hexdigest()
-        users = read_csv('datas/users.csv')
+        pass_hash = hashlib.sha256(password.encode()).hexdigest()
+        users = pandas.read_csv('datas/users.csv')
         user_pass_hash = users.loc[login_cur_user_index, 'password']
 
         if pass_hash != user_pass_hash:
             login_password_valid = False
-        
-    if cur_page_id == Pages.login_username and login_username_valid:
-        cur_page_id = Pages.login_password # username was valid go to password page
-    elif cur_page_id == Pages.login_password and login_password_valid: # user logged in successfuly, go to main page
-        cur_page_id = Pages.main
-
-        current_user = compos.User('neotod', 'soltani', 'neotod')
 
 def remove_task_if_exists(context, task_name):
     jobs = context.job_queue.get_jobs_by_name(task_name)
@@ -291,19 +401,37 @@ def remove_task_if_exists(context, task_name):
 
 def set_session_removal_task(context, chat_id: str):
     remove_task_if_exists(context, str(chat_id))
+    
+    context.job_queue.run_once(lambda _:logout(context), MAX_SESSION_TIME, name=str(chat_id))
 
-    context.job_queue.run_once(logout, MAX_SESSION_TIME, name=str(chat_id))
+def message_remove(message):
+    try: # maybe user itself deleted that message
+        message.delete()
+    except:
+        pass
+
+def set_message_removal_task(context, message, time):
+    remove_task_if_exists(context, str(message.message_id))
+
+    context.job_queue.run_once(lambda _:message_remove(message), time, name=str(message.message_id))
 
 def logout(context):
-    global current_user, cur_page_id, login_cur_user_index, inline_query_message, chat_id
+    '''cleanup function'''
+
+    global current_user, cur_page_id, inline_query_message, chat_id, whereami
+    global login_username_valid, login_password_valid, login_cur_user_index
+
+    login_username_valid = login_password_valid = True
     
     current_user = None
-    cur_page_id = Pages.welcome
     login_cur_user_index = 0
 
     inline_query_message = None
+
+    remove_task_if_exists(context, chat_id)
     chat_id = 0
 
+    whereami = ['خانه🏠']
 
 def main():
     updater = Updater(TOKEN, request_kwargs={
