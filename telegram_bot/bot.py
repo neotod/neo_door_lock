@@ -1,6 +1,7 @@
 import os
 import re
 import pandas
+import logging
 import hashlib
 import jdatetime
 
@@ -53,6 +54,9 @@ chat_id = 0 # current chat (user with bot) id
 
 whereami = ['خانه🏠']
 
+logging.basicConfig(filename='datas/log.log', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 def start(update, context):
     global cur_page_id, inline_query_message, whereami, chat_id
 
@@ -84,6 +88,9 @@ def start(update, context):
         chat_id = query.message.chat_id
         inline_query_message = query.bot.send_message(chat_id, description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
         query.answer()
+
+    user = update.effective_user
+    logger.info(f'New user starts the bot, user info: \t\nfname: {user.first_name}\t\nlname: {user.last_name}\t\nusername: {user.username}\n')
 
 def help_(update, context):
     return
@@ -211,6 +218,8 @@ def text(update, context):
                 event = compos.Event(compos.Events.user_login, 'ورود کاربر به تلگرام')
                 event_info = f'username: {current_user.username}'
                 report(event, event_info)
+
+            logger.info(f'SUCCESSFUL LOGIN \n TELEGRAM => F: {user_obj.first_name}, L: {user_obj.last_name}, U: {user_obj.username} \n BOT => username: {current_user.username}\n')
             
             set_session_removal_task(context, chat_id)
             start(update, context)
@@ -451,4 +460,7 @@ def main():
     updater.idle()
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except:
+        logger.exception('An exception occured.')
