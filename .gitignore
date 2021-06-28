@@ -1,5 +1,4 @@
-*/.builds
-*/.vscode
+*.builds
+*.vscode/
 */__pycache__/
-enc_key.txt
-todos.md
+/telegram_bot/.*
