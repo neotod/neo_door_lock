@@ -4,14 +4,12 @@ import re
 import pandas
 import logging
 import hashlib
+import argparse
 import jdatetime
 
 from parts import *
 
 from telegram import (
-    Update, 
-    Message,
-    ReplyKeyboardMarkup, 
     InlineKeyboardButton, 
     InlineKeyboardMarkup, 
 )
@@ -22,10 +20,9 @@ from telegram.ext import (
     MessageHandler,
     CallbackQueryHandler
 )
-from telegram.constants import PARSEMODE_HTML
+from telegram.constants import PARSEMODE_HTML, PARSEMODE_MARKDOWN
 
 
-TOKEN = "TOKEN"
 MAX_SESSION_TIME = 5 * 60 # 5 mins
 DOCUMENT_DESTRUCTION_TIME = 30
 LOGS_DIR = os.path.join('datas', 'log.log')
@@ -438,7 +435,13 @@ def logout(context):
     whereami = ['خانه🏠']
 
 def main():
-    updater = Updater(TOKEN, request_kwargs={
+    parser = argparse.ArgumentParser()
+    parser.add_argument('token', help='telegram bot api token')
+    args = parser.parse_args()
+    
+    token = args.token
+
+    updater = Updater(token, request_kwargs={
         'proxy_url': 'socks5h://127.0.0.1:1081' # this ip:port of my outline client
     })
 
