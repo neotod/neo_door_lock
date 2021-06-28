@@ -1,60 +1,8 @@
-import enum
+from .classes import *
 
 bot_pages = {} 
 settings_switch_btns = {}
 text_handling_pages = [] # pages that need text handling function to work with them
-
-class Pages(enum.Enum):
-    welcome = enum.auto()
-
-    login_username = enum.auto()
-    login_password = enum.auto()
-
-    main = enum.auto()
-    settings = enum.auto()
-    report = enum.auto()
-
-    settings_report = enum.auto()
-    settings_lock = enum.auto()
-
-class Buttons(enum.IntEnum): # every button except back button in the bot, has a unique id
-    back = enum.auto()
-    login = enum.auto()
-    logout = enum.auto()
-    report = enum.auto()
-    settings = enum.auto()
-
-    settings_report = enum.auto()
-    settings_lock = enum.auto()
-
-    day_report = enum.auto()
-    month_report = enum.auto()
-    year_report = enum.auto()
-    
-    settings_lreport_switch = enum.auto()
-    settings_lreport_off = enum.auto()
-    settings_lreport_on = enum.auto()
-
-    settings_oreport_switch = enum.auto()
-    settings_oreport_off = enum.auto()
-    settings_oreport_on = enum.auto()
-
-    settings_lock_switch = enum.auto()
-    settings_lock_off = enum.auto()
-    settings_lock_on = enum.auto()
-
-class Button:
-    def __init__(self, id_: Buttons, text: str, next_page_id: int, row_index: int=0):
-        self.id_ = id_
-        self.text = text
-        self.next_page_id = next_page_id
-        self.row_index = row_index
-
-class Page:
-    def __init__(self, id_: Pages, buttons: dict, description: str):
-        self.id_ = id_
-        self.buttons = buttons
-        self.description = description
 
 def make_pages():
     login_btn  = Button(Buttons.login, 'ورود🔑', Pages.login_username)

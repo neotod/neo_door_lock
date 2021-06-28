@@ -1,11 +1,17 @@
-import enum
+from .ids import *
 
+class Button:
+    def __init__(self, id_: Buttons, text: str, next_page_id: int, row_index: int=0):
+        self.id_ = id_
+        self.text = text
+        self.next_page_id = next_page_id
+        self.row_index = row_index
 
-class Events(enum.Enum):
-    lock_state_change = enum.auto()
-    user_login = enum.auto()
-    user_change = enum.auto()
-    entry = enum.auto()
+class Page:
+    def __init__(self, id_: Pages, buttons: dict, description: str):
+        self.id_ = id_
+        self.buttons = buttons
+        self.description = description
 
 class Smart_Lock:
     def __init__(self, state: bool=True, ontime_report_on: bool=False, longtime_report_on: bool=False, phone_number: int=0):
