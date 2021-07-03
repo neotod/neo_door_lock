@@ -1,10 +1,10 @@
 import enum
 
-class Events(enum.Enum):
+class Events(enum.IntEnum):
     lock_state_change = enum.auto()
     user_login = enum.auto()
-    user_change = enum.auto()
     entry = enum.auto()
+    user_change = enum.auto()
 
 class Pages(enum.Enum):
     welcome = enum.auto()
