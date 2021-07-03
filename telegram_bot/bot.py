@@ -1,6 +1,4 @@
 import os
-import sys
-import re
 import pandas
 import logging
 import hashlib
@@ -25,10 +23,13 @@ from telegram.constants import PARSEMODE_HTML, PARSEMODE_MARKDOWN
 
 MAX_SESSION_TIME = 5 * 60 # 5 mins
 DOCUMENT_DESTRUCTION_TIME = 30
-LOGS_DIR = os.path.join('datas', 'log.log')
+DB_PATH = os.path.join('datas', 'bot_db.db')
+INIT_SQL_FILE_PATH = os.path.join('datas', 'init_db.sql')
+LOGS_PATH = os.path.join('datas', 'log.log')
 
 
 pages.make_pages()
+db_conn = db.utils.init_db(DB_PATH, INIT_SQL_FILE_PATH)
 
 smart_lock = classes.Smart_Lock()
 current_user = None
@@ -38,7 +39,7 @@ cur_page_id = ids.Pages.welcome
 login_username_valid = True
 login_password_valid = True
 
-login_cur_user_index = 0
+login_cur_username = 0
 
 inline_query_message = None # the main message which is getting updated constantly
 chat_id = 0 # current chat (user with bot) id
@@ -207,9 +208,8 @@ def text(update, context):
             current_user = classes.User(user_obj, 'neotod', 'soltani', 'neotod')
 
             if smart_lock.lreport_on:
-                event = classes.Event(classes.Events.user_login, 'ورود کاربر به تلگرام')
                 event_info = f'username: {current_user.username}'
-                report(event, event_info)
+                report(ids.Events.user_login, event_info)
 
             logger.info(f'SUCCESSFUL LOGIN \n TELEGRAM => F: {user_obj.first_name}, L: {user_obj.last_name}, U: {user_obj.username} \n BOT => username: {current_user.username}\n')
             
@@ -272,10 +272,9 @@ def settings_update(button_id):
         next_btn = pages.settings_switch_btns[ids.Buttons.settings_lock_off] if smart_lock.on else pages.settings_switch_btns[ids.Buttons.settings_lock_on]
 
         if smart_lock.lreport_on:
-            event = classes.Event(classes.Events.lock_state_change, 'تغییر وضعیت قفل')
-            event_info = 'current_state: '
-            event_info += 'on' if smart_lock.on else 'off'
-            report(event, event_info)
+            event_info = 'وضعیت فعلی: '
+            event_info += 'فعال' if smart_lock.on else 'غیرفعال'
+            report(ids.Events.lock_state_change, event_info)
                 
     elif button_id == ids.Buttons.settings_lreport_switch:
         smart_lock.lreport_on = False if smart_lock.lreport_on else True # switch the state
@@ -302,49 +301,52 @@ def settings_description_update(description):
     return description
 
 def output_report(update, context, button_id: ids.Buttons):
-    '''report_interval = day | week | month'''
+    global inline_query_message, db_conn
 
-    global inline_query_message
-
-    df = pandas.read_csv('datas/report.csv')
-    records_dates = list(df['تاریخ'])
-    cur_date = jdatetime.datetime.now()
-
+    cur_datetime = jdatetime.datetime.now()
     query = update.callback_query
     chat_id = query.message.chat_id
+    
+    if button_id == ids.Buttons.year_report or button_id == ids.Buttons.month_report:
+        cur_date = str(cur_datetime.date()).split('-')
 
-    same_date_indexes = []
-    for i in range(len(records_dates)):
-        year, month, day = [int(part) for part in records_dates[i].split('-')]
+        if button_id == ids.Buttons.year_report:
+            d1 = f"{cur_date[0]}-01-01"
+            d2 = f"{cur_date[0]}-12-31"
 
-        is_same_date = False
-        if year == cur_date.year:
-            if button_id == ids.Buttons.year_report:
-                is_same_date = True
-            else:
-                if month == cur_date.month:
-                    if button_id == ids.Buttons.month_report:
-                        is_same_date = True
-                    else:
-                        if day == cur_date.day:
-                            if button_id == ids.Buttons.day_report:
-                                is_same_date = True
+        elif button_id == ids.Buttons.month_report:
+            d1 = f"{cur_date[0]}-{cur_date[1]}-00"
+            d2 = f"{cur_date[0]}-{cur_date[1]}-31"
 
-        if is_same_date:
-            same_date_indexes.append(i)
+        conditions = {'date': ('between', (d1, d2))}
 
-    if same_date_indexes:
-        records = [list(df.loc[i]) for i in same_date_indexes]
+    elif button_id == ids.Buttons.day_report:
+        cur_date = str(cur_datetime.date())
+        t1 = "00:00:00"
+        t2 = "24:59:59"
 
-        new_df = pandas.DataFrame([list(df.columns)])
-        for record in records:
-            new_df = new_df.append([list(record)])
+        conditions = {'date': cur_date, 'time': ('between', (t1, t2))}
+    
+    reports = db.utils.read_from_table(db_conn, 'reports', None, conditions)
+    reports = [list(r) for r in reports]
+    if reports:
+        events = db.utils.read_from_table(db_conn, 'events') # a dirty INNER JOIN (maybe I should use ORMs)
+        events = {e[0]: e[1:] for e in events}
 
-        new_df.to_csv('datas/temp.csv', sep='\t', encoding='utf-16', index=False, header=False)
+        for i in range(len(reports)):
+            rep = reports[i]
+            event_id = rep[1]
+
+            reports[i][0] = i+1
+            reports[i][1] = events[event_id][1]
+
+        headers = ['id', 'رویداد', 'تاریخ', 'زمان', 'اطلاعات بیشتر']
+
+        new_df = pandas.DataFrame(reports, columns=headers)
+        new_df.to_csv('datas/temp.csv', sep='\t', encoding='utf-16', index=False)
 
         with open('datas/temp.csv', 'rb') as f:
-
-            file_name = f'report_{str(cur_date)[:-7]}.csv'.replace(':', '_').replace(' ', '_')
+            file_name = f'report_{str(cur_datetime)[:-7]}.csv'.replace(':', '-').replace(' ', '_')
 
             if button_id == ids.Buttons.year_report:
                 file_name = f'year_{file_name}'
@@ -363,35 +365,43 @@ def output_report(update, context, button_id: ids.Buttons):
         set_message_removal_task(context, message, DOCUMENT_DESTRUCTION_TIME)
         return False
 
-def report(event: classes.Event, more_info: str):
-    event_text = event.name # event names: تغییر وضعیت قفل | ورود کاربر به تلگرام | ورود
+def report(event_id: ids.Events, more_info: str):
+    global db_conn
 
     now_date = str(jdatetime.datetime.now().date())
     now_time = str(jdatetime.datetime.now().time())[:-7]
-    df = pandas.DataFrame([[now_date, now_time, event_text, more_info]])
-    df.to_csv('datas/report.csv', mode='a', encoding='utf-8-sig', header=False, index=False)
+
+    result = db.utils.insert_into_table(
+                                        db_conn, 
+                                        'reports', 
+                                        ('event_id', 'date', 'time', 'more_info'), 
+                                        (int(event_id), now_date, now_time, more_info)
+                                    )
+
+    return result
 
 def validate_input(data: dict):
-    global cur_page_id, current_user
-    global login_username_valid, login_password_valid, login_cur_user_index
+    global cur_page_id, current_user, db_conn
+    global login_username_valid, login_password_valid, login_cur_username
 
     if 'username' in data:
         username = data['username'].lower()
-        users = pandas.read_csv('datas/users.csv')
-        usernames = dict(users.username)
+        res = db.utils.read_from_table(db_conn, 'users', 'username', {'username': username})
 
-        if username not in usernames.values():
+        if not res:
             login_username_valid = False
-        else: # username was valid
-            login_cur_user_index = list(usernames.values()).index(username)
+        else:
+            login_cur_username = username
 
     elif 'password' in data:
         password = data['password']
         pass_hash = hashlib.sha256(password.encode()).hexdigest()
-        users = pandas.read_csv('datas/users.csv')
-        user_pass_hash = users.loc[login_cur_user_index, 'password']
+        pass_hash_id = db.utils.read_from_table(db_conn, 'users', 'pass_hash_id', {'username': login_cur_username})[0][0]
 
-        if pass_hash != user_pass_hash:
+        real_pass_hash = db.utils.read_from_table(db_conn, 'pass_hashes', 'hash', {'id': pass_hash_id})[0][0]
+        print(real_pass_hash)
+
+        if pass_hash != real_pass_hash:
             login_password_valid = False
 
 def remove_task_if_exists(context, task_name):
@@ -420,12 +430,12 @@ def logout(context):
     '''cleanup function'''
 
     global current_user, cur_page_id, inline_query_message, chat_id, whereami
-    global login_username_valid, login_password_valid, login_cur_user_index
+    global login_username_valid, login_password_valid, login_cur_username
 
     login_username_valid = login_password_valid = True
     
     current_user = None
-    login_cur_user_index = 0
+    login_cur_username = ''
 
     inline_query_message = None
 
@@ -441,9 +451,10 @@ def main():
     
     token = args.token
 
-    updater = Updater(token, request_kwargs={
-        'proxy_url': 'socks5h://127.0.0.1:1081' # this ip:port of my outline client
-    })
+    # updater = Updater(token, request_kwargs={
+    #     'proxy_url': 'socks5h://127.0.0.1:1081' # this ip:port of my outline client
+    # })
+    updater = Updater(token)
 
     dispatcher = updater.dispatcher
 
