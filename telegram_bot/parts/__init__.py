@@ -1,5 +1,8 @@
 __all__ = [
     'classes',
     'ids',
-    'pages'
+    'pages',
+    'db'
 ]
+
+from . import classes, db, ids, pages
