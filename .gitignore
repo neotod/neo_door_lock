@@ -1,4 +1,4 @@
 *.builds
 *.vscode/
-*/__pycache__/
+*__pycache__/
 /telegram_bot/.*
