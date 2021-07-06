@@ -1,0 +1,6 @@
+.venv/
+.vscode/
+.pytest_cache/
+.fandogh/
+__pycache__/
+tests/
