@@ -1,4 +1,9 @@
-*.builds
-*.vscode/
-*__pycache__/
-/telegram_bot/.*
+# dirs
+.builds/
+.vscode/
+__pycache__/
+.fandogh/
+.pytest_cache/
+
+# files
+get.sh
