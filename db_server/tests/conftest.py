@@ -6,6 +6,17 @@ from server import app
 
 DEBUG = True
 
+@pytest.fixture()
+def urls():
+    return {
+        'db-read': '/db/read',
+        'db-insert': '/db/insert',
+        'db-update': '/db/update',
+        'db-delete': '/db/delete',
+
+        'login': '/login'
+    }
+
 @pytest.fixture(scope='class')
 def files_path():
     return {

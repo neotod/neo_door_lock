@@ -1,5 +1,6 @@
 import logging
 from flask import current_app, g
+from flask.helpers import make_response
 
 from . import db
 
@@ -43,12 +44,10 @@ def check_request_json(request):
     else:
         return 'ok', 200
 
-def check_table_existence(request):
-    table_name = request.path.split('/')[-1]
+def validate_table_name(request):
+    for tbl_name in request.get_json():
+        if tbl_name in current_app.config['FORBIDDEN_TABLES']:
+            msg = f"Table {tbl_name} can't be accessed!\n"
+            return msg, 401
 
-    try:
-        list(db.get_table_columns(g.db_conn, table_name)) # a test to check if the table exists
-    except ValueError:
-        return 'Provided table name is wrong!\n', 422
-    else:
-        return 'ok', 200
+    return 'ok', 200

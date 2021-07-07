@@ -10,52 +10,125 @@ from flask import (
 from flask.json import jsonify
 
 from ..utils import db
-from ..utils.decors import check_errors, log
+from ..utils.decors import check_errors, log, handle_bad_format
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('db', __name__, url_prefix='/db')
 
-@bp.route('/read/<table_name>', methods=['GET', 'POST'])
+@bp.route('/read', methods=['POST'])
 @check_errors
+@handle_bad_format
 @log
-def table_read(table_name):
+def table_read():
     limit = 50
     conditions = None
-    if request.is_json:
-        data = request.get_json()
 
-        if 'limit' in data:
-            limit = data['limit']
+    results = {}
+    data = request.get_json()
+    for tbl_name in data:
+        tbl_data = data[tbl_name]
 
-        if 'conditions' in data:
-            conditions = data['conditions']
+        if 'limit' in tbl_data:
+            limit = tbl_data['limit']
+
+        if 'conditions' in tbl_data:
+            conditions = tbl_data['conditions']
         
-    result = db.read_from_table(g.db_conn, table_name, None, conditions)
+        res = db.read_from_table(g.db_conn, tbl_name, None, conditions)
+        if res:
+            results[tbl_name] = [dict(r) for r in res[:limit]]
+        else:
+            results[tbl_name] = 'failed'
 
-    if result:
-        result = [dict(r) for r in result[:limit]]
-        return jsonify(result=result,)
-
+    if results:
+        return jsonify(result=results)
     else:
-        if not current_app.config['TESTING']:
-            logger.error(f'Table info: \n\t connection: {g.db_conn} \n\t name: {table_name}\n\t data: {data}')
+        logger.error(f'Table info: \n\t connection: {g.db_conn} \n\t data: {data}')
 
         return make_response('Failed!\n', 500)
 
-@bp.route('/insert/<table_name>', methods=['POST'])
+@bp.route('/insert', methods=['POST'])
 @check_errors
+@handle_bad_format
 @log
-def table_insert(table_name):
+def table_insert():
     data = request.get_json()
-    cols = data['cols']
-    vals = data['vals']
-    
-    res = db.insert_into_table(g.db_conn, table_name, cols, vals)
-    
-    if res:
-        return make_response('Success\n', 200)
+
+    results = {}
+    for tbl_name in data.keys():
+        results[tbl_name] = 'success'
+
+        tbl_data = data[tbl_name]
+        cols = tbl_data['cols']
+        vals = tbl_data['vals']
+
+        res = db.insert_into_table(g.db_conn, tbl_name, cols, vals)
+
+        if not res:
+            results[tbl_name] = 'failed'
+
+    if results:
+        return jsonify(result=results)
     else:
-        if not current_app.config['TESTING']:
-            logger.error(f'Table info: \n\t connection: {g.db_conn} \n\t name: {table_name}')
+        logger.error(f'DB_Connection: {g.db_conn} \n\t data: {data}')
+
+        return make_response('Failed!\n', 500)
+
+@bp.route('/update', methods=['POST'])
+@check_errors
+@handle_bad_format
+@log
+def table_update():
+    data = request.get_json()
+
+    results = {}
+    for tbl_name in data.keys():
+        results[tbl_name] = []
+        
+        tbl_datas = data[tbl_name]
+        for tbl_data in tbl_datas:
+            results[tbl_name].append('success')
+
+            setting_cols = tbl_data['setting_cols']
+            conditions = None
+            if 'condition' in tbl_data:
+                conditions = tbl_data['conditions']
+
+            res = db.update_table(g.db_conn, tbl_name, setting_cols, conditions)
+            
+            if not res:
+                results[tbl_name][-1] = 'failed'
+
+    if results:
+        return jsonify(result=results)
+    else:
+        logger.error(f'DB_Connection: {g.db_conn} \n\t data: {data}')
+
+        return make_response('Failed!\n', 500)
+
+@bp.route('/delete', methods=['POST'])
+@check_errors
+@handle_bad_format
+@log
+def table_delete():
+    data = request.get_json()
+
+    results = {}
+    for tbl_name in data.keys():
+        results[tbl_name] = []
+
+        conditions = data[tbl_name]
+        for condi in conditions:
+            res = db.delete_from_table(g.db_conn, tbl_name, condi)
+
+            if res:
+                results[tbl_name].append('success')
+            else:
+                results[tbl_name].append('failed')
+
+    if results:
+        return jsonify(result=results)
+    else:
+        logger.error(f'DB_Connection: {g.db_conn} \n\t data: {data}')
 
         return make_response('Failed!\n', 500)

@@ -12,13 +12,14 @@ from flask import (
 )
 from flask.json import jsonify
 
-from ..utils.decors import log
+from ..utils.decors import log, handle_bad_format
 from ..utils import db
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('login', __name__)
 
 @bp.route('/login', methods=['POST'])
+@handle_bad_format
 @log
 def login():
     msg = ''
@@ -62,11 +63,9 @@ def login():
                 res = db.insert_into_table(g.db_conn, 'api_tokens', ('user_id', 'token'), (user_id, token))
 
             if res:
-                return jsonify(username=username, token=token)
+                return jsonify(username=username, token=token, expiration='never')
             else:
-                if not current_app.config['TESTING']:
-                    logger.error(f'Login info: \n\t username: {username}')
-
+                logger.error(f'Login info: \n\t username: {username}')
                 return make_response('Failed!\n', 500)
         else:
             return make_response('Password is wrong!\n', 401)

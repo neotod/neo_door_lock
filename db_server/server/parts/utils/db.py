@@ -142,6 +142,25 @@ def update_table(db_conn, table_name, setting_columns, conditions=None):
 
     return True
 
+def delete_from_table(db_conn, table_name, conditions):
+    statement = f'''
+    DELETE FROM `{table_name}`
+    '''
+    
+    condition_str = get_condition_str(conditions)
+    statement += (condition_str + ';')
+    
+    try:
+        with closing(db_conn.cursor()) as cursor:
+            cursor.execute(statement)
+    except:
+        logger.exception('An Exception occured while trying to execute the SQL statements (delete from table).')
+        return False
+    else:
+        db_conn.commit()
+
+    return True
+
 def get_condition_str(conditions):
     '''
     :conditions: dict

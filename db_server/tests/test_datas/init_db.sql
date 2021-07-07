@@ -35,6 +35,7 @@ CREATE TABLE users(
     username text not null unique,
     pass_hash_id integer not null unique,
     email text not null unique,
+    phone integer default 0,
     constraint hash_id_fk foreign key(pass_hash_id) references pass_hashes(id)
 );
 
@@ -58,7 +59,7 @@ INSERT INTO reports VALUES(5, 3, '1400-05-01', '15:20:20', 'ورود ناموف�
 
 INSERT INTO pass_hashes VALUES(1, 'd64ddcd5979fd920a8809276b82f419f9994c58e85d54cf842d3b5060212bba2','e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683');
 
-INSERT INTO users VALUES(1, 'neotod',NULL,'neotod',1,'neotod@gmail.com');
+INSERT INTO users VALUES(1, 'neotod',NULL,'neotod',1,'neotod@gmail.com', 0);
 
 INSERT INTO api_tokens VALUES(1, 1, '01aa857beea71a6afb169de2238a20de480c4f8a87967cde5630bade2e4a351b');
 
