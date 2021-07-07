@@ -1,0 +1,4 @@
+/.fandogh
+/.venv
+*__pycache__/
+/datas/bot_db.db
