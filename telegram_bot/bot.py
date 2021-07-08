@@ -2,10 +2,11 @@ import os
 import pandas
 import logging
 import hashlib
-import argparse
 import jdatetime
+import configparser
 
-from parts import *
+import db_api
+from src import *
 
 from telegram import (
     InlineKeyboardButton, 
@@ -23,13 +24,9 @@ from telegram.constants import PARSEMODE_HTML, PARSEMODE_MARKDOWN
 
 MAX_SESSION_TIME = 5 * 60 # 5 mins
 DOCUMENT_DESTRUCTION_TIME = 30
-DB_PATH = os.path.join('datas', 'bot_db.db')
-INIT_SQL_FILE_PATH = os.path.join('datas', 'init_db.sql')
 LOGS_PATH = os.path.join('datas', 'log.log')
 
-
 pages.make_pages()
-db_conn = db.utils.init_db(DB_PATH, INIT_SQL_FILE_PATH)
 
 smart_lock = classes.Smart_Lock()
 current_user = None
@@ -46,7 +43,7 @@ chat_id = 0 # current chat (user with bot) id
 
 whereami = ['خانه🏠']
 
-# logging.basicConfig(filename=LOGS_DIR, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# logging.basicConfig(filename=LOGS_PATH, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -205,11 +202,20 @@ def text(update, context):
         if login_username_valid and login_password_valid: # login was successful.
             cur_page_id = ids.Pages.main
             user_obj = update.effective_user
-            current_user = classes.User(user_obj, 'neotod', 'soltani', 'neotod')
+            
+            data = {
+                'users': {
+                    'conditions': {'username': login_cur_username}
+                }
+            }
+            user_data = db_api.read(data)['users'][0]
+
+            user_data['lastname'] = '' if user_data['lastname'] == None else user_data['lastname']
+            current_user = classes.User(user_obj, user_data['name_'], user_data['lastname'], login_cur_username, user_data['phone'])
 
             if smart_lock.lreport_on:
                 event_info = f'username: {current_user.username}'
-                report(ids.Events.user_login, event_info)
+                db_api.report(db_api.Events.user_login, event_info)
 
             logger.info(f'SUCCESSFUL LOGIN \n TELEGRAM => F: {user_obj.first_name}, L: {user_obj.last_name}, U: {user_obj.username} \n BOT => username: {current_user.username}\n')
             
@@ -274,7 +280,7 @@ def settings_update(button_id):
         if smart_lock.lreport_on:
             event_info = 'وضعیت فعلی: '
             event_info += 'فعال' if smart_lock.on else 'غیرفعال'
-            report(ids.Events.lock_state_change, event_info)
+            db_api.report(db_api.Events.lock_state_change, event_info)
                 
     elif button_id == ids.Buttons.settings_lreport_switch:
         smart_lock.lreport_on = False if smart_lock.lreport_on else True # switch the state
@@ -326,23 +332,49 @@ def output_report(update, context, button_id: ids.Buttons):
         t2 = "24:59:59"
 
         conditions = {'date': cur_date, 'time': ('between', (t1, t2))}
-    
-    reports = db.utils.read_from_table(db_conn, 'reports', None, conditions)
-    reports = [list(r) for r in reports]
+
+    data = {
+        'reports': {
+            'conditions': conditions
+        }
+    }
+    reports = db_api.read(data)['reports']
+
     if reports:
-        events = db.utils.read_from_table(db_conn, 'events') # a dirty INNER JOIN (maybe I should use ORMs)
-        events = {e[0]: e[1:] for e in events}
+        data = {
+            'events': {}
+        }
+        events = db_api.read(data)['events']
+        new_events = {} # making it like {id: {rest of columns: val}}
+        for event in events:
+            ev_copy = dict(event)
+            new_events[ev_copy.pop('id')] = ev_copy
 
+        events = new_events
+
+        copy_reps = list(reports)
         for i in range(len(reports)):
-            rep = reports[i]
-            event_id = rep[1]
+            event_id = copy_reps[i].pop('event_id')
+            copy_reps[i]['event'] = events[event_id]['text_']
+            copy_reps[i].pop('id')
 
-            reports[i][0] = i+1
-            reports[i][1] = events[event_id][1]
+        reports = copy_reps
 
-        headers = ['id', 'رویداد', 'تاریخ', 'زمان', 'اطلاعات بیشتر']
+        sorted_keys = ['event', 'date', 'time', 'more_info']
+        sorted_reps = []
+        for rep in reports:
+            srep = {key: rep[key] for key in sorted_keys}
+            sorted_reps.append(srep)
 
-        new_df = pandas.DataFrame(reports, columns=headers)
+        reports = sorted_reps
+
+        new_keys_map = {'event': 'رویداد', 'more_info': 'اطلاعات بیشتر', 'date': 'تاریخ', 'time': 'زمان'}
+        new_reps = []
+        for rep in reports:
+            new_rep = {new_keys_map[key]: val for key, val in rep.items()}
+            new_reps.append(new_rep)
+
+        new_df = pandas.DataFrame(new_reps)
         new_df.to_csv('datas/temp.csv', sep='\t', encoding='utf-16', index=False)
 
         with open('datas/temp.csv', 'rb') as f:
@@ -365,30 +397,20 @@ def output_report(update, context, button_id: ids.Buttons):
         set_message_removal_task(context, message, DOCUMENT_DESTRUCTION_TIME)
         return False
 
-def report(event_id: ids.Events, more_info: str):
-    global db_conn
-
-    now_date = str(jdatetime.datetime.now().date())
-    now_time = str(jdatetime.datetime.now().time())[:-7]
-
-    result = db.utils.insert_into_table(
-                                        db_conn, 
-                                        'reports', 
-                                        ('event_id', 'date', 'time', 'more_info'), 
-                                        (int(event_id), now_date, now_time, more_info)
-                                    )
-
-    return result
-
 def validate_input(data: dict):
     global cur_page_id, current_user, db_conn
     global login_username_valid, login_password_valid, login_cur_username
 
     if 'username' in data:
         username = data['username'].lower()
-        res = db.utils.read_from_table(db_conn, 'users', 'username', {'username': username})
+        data = {
+            'users': {
+                'conditions': {'username': username}
+            }
+        }
+        result = db_api.read(data)['users']
 
-        if not res:
+        if not result:
             login_username_valid = False
         else:
             login_cur_username = username
@@ -396,10 +418,19 @@ def validate_input(data: dict):
     elif 'password' in data:
         password = data['password']
         pass_hash = hashlib.sha256(password.encode()).hexdigest()
-        pass_hash_id = db.utils.read_from_table(db_conn, 'users', 'pass_hash_id', {'username': login_cur_username})[0][0]
-
-        real_pass_hash = db.utils.read_from_table(db_conn, 'pass_hashes', 'hash', {'id': pass_hash_id})[0][0]
-        print(real_pass_hash)
+        data = {
+            'users': {
+                'conditions': {'username': login_cur_username}
+            }
+        }
+        pass_hash_id = db_api.read(data)['users'][0]['pass_hash_id']
+        
+        data = {
+            'pass_hashes': {
+                'conditions': {'id': pass_hash_id}
+            }
+        }
+        real_pass_hash = db_api.read(data)['pass_hashes'][0]['hash']
 
         if pass_hash != real_pass_hash:
             login_password_valid = False
@@ -445,15 +476,18 @@ def logout(context):
     whereami = ['خانه🏠']
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('token', help='telegram bot api token')
-    args = parser.parse_args()
-    
-    token = args.token
+    global db_credentials
 
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+
+    db_config = config['db_api']
+    db_api.init(db_config)
+    
     # updater = Updater(token, request_kwargs={
     #     'proxy_url': 'socks5h://127.0.0.1:1081' # this ip:port of my outline client
     # })
+    token = config['bot']['token']
     updater = Updater(token)
 
     dispatcher = updater.dispatcher

@@ -1,4 +1,4 @@
-from .ids import *
+from .ids import Buttons, Pages
 
 class Button:
     def __init__(self, id_: Buttons, text: str, next_page_id: int, row_index: int=0):
@@ -27,8 +27,3 @@ class User:
         self.lastname = lastname
         self.username = username
         self.phone_number = phone_number
-
-class Event:
-    def __init__(self, id_: Events, name: str):
-        self.id_ = id_
-        self.name = name
