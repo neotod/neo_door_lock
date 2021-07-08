@@ -9,6 +9,7 @@ class Base:
     FORBIDDEN_TABLES = ['api_tokens']
 
 class Development(Base):
+    DEBUG = True
     ENV = 'development'
 
 class Testing(Development):

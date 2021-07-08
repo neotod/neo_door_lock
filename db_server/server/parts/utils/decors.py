@@ -36,12 +36,12 @@ def check_errors(func):
 
     return wrapper
 
-def handle_bad_format(func):
+def check_bad_format(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except:
+        except KeyError:
             url_prefix = request.path[1:]
             format_key = url_prefix.replace('/', '-')
             msg = f'Please use the correct format for your JSON.\n For getting correct formats go to /format/{format_key}.\n'

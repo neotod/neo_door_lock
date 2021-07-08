@@ -4,37 +4,22 @@ import logging
 from hashlib import sha256
 from flask import (
     make_response, 
-    current_app,
     Blueprint, 
     request, 
-    abort, 
     g, 
 )
 from flask.json import jsonify
 
-from ..utils.decors import log, handle_bad_format
+from ..utils.decors import log, check_bad_format
 from ..utils import db
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('login', __name__)
 
 @bp.route('/login', methods=['POST'])
-@handle_bad_format
+@check_bad_format
 @log
 def login():
-    msg = ''
-    if request.form:
-        if 'username' not in request.form:
-            msg += 'Please provide your Username!\n'
-        if 'password' not in request.form:
-            msg += 'Please provide your Password!\n'
-    else:
-        msg += 'Please provide your Username!\n'
-        msg += 'Please provide your Password!\n'
-
-    if msg:
-        abort(make_response(msg, 401))
-        
     username = request.form['username']
     password = request.form['password']
 

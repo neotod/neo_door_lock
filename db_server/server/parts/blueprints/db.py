@@ -1,23 +1,21 @@
 import logging
 from flask import (
     make_response,
-    current_app,
     Blueprint, 
     request, 
-    abort,
     g, 
 )
 from flask.json import jsonify
 
 from ..utils import db
-from ..utils.decors import check_errors, log, handle_bad_format
+from ..utils.decors import check_errors, log, check_bad_format
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('db', __name__, url_prefix='/db')
 
 @bp.route('/read', methods=['POST'])
 @check_errors
-@handle_bad_format
+@check_bad_format
 @log
 def table_read():
     limit = 50
@@ -38,7 +36,7 @@ def table_read():
         if res:
             results[tbl_name] = [dict(r) for r in res[:limit]]
         else:
-            results[tbl_name] = 'failed'
+            results[tbl_name] = []
 
     if results:
         return jsonify(result=results)
@@ -49,7 +47,7 @@ def table_read():
 
 @bp.route('/insert', methods=['POST'])
 @check_errors
-@handle_bad_format
+@check_bad_format
 @log
 def table_insert():
     data = request.get_json()
@@ -76,7 +74,7 @@ def table_insert():
 
 @bp.route('/update', methods=['POST'])
 @check_errors
-@handle_bad_format
+@check_bad_format
 @log
 def table_update():
     data = request.get_json()
@@ -108,7 +106,7 @@ def table_update():
 
 @bp.route('/delete', methods=['POST'])
 @check_errors
-@handle_bad_format
+@check_bad_format
 @log
 def table_delete():
     data = request.get_json()

@@ -1,6 +1,5 @@
 import logging
 from flask import current_app, g
-from flask.helpers import make_response
 
 from . import db
 
@@ -48,6 +47,6 @@ def validate_table_name(request):
     for tbl_name in request.get_json():
         if tbl_name in current_app.config['FORBIDDEN_TABLES']:
             msg = f"Table {tbl_name} can't be accessed!\n"
-            return msg, 401
+            return msg, 403
 
     return 'ok', 200

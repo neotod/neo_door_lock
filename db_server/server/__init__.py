@@ -1,4 +1,4 @@
-from .config import Development, formats
+from .config import Production, formats
 from .parts import blueprints
 from .parts.utils.db import set_db_conn, close_db, init_db
 from .parts.utils.decors import log
@@ -6,7 +6,7 @@ from .parts.utils.decors import log
 from flask import Flask, make_response
 
 app = Flask(__name__)
-app.config.from_object(Development)
+app.config.from_object(Production)
 
 app.before_first_request(init_db)
 app.before_request(set_db_conn)
