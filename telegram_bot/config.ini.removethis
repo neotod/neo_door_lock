@@ -1,0 +1,6 @@
+[bot]
+token='BOT TOKEN'
+
+[db_api]
+username='DB API USERNAME'
+password='DB API PASSWORD'
