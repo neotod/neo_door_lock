@@ -1,7 +1,6 @@
 from .config import Production, formats
 from .parts import blueprints
 from .parts.utils.db import set_db_conn, close_db, init_db
-from .parts.utils.decors import log
 
 from flask import Flask, make_response
 
@@ -21,6 +20,10 @@ def index():
         /db/insert : method=POST : data=JSON
         /db/update : method=POST : data=JSON
         /db/delete : method=POST : data=JSON
+        /db/backup : method=GET
+        
+        /rberry : method=GET
+        /rberry : method=POST : data=JSON
 
         /login : method=POST : data=form
 
@@ -29,7 +32,6 @@ def index():
     return msg
 
 @app.route('/format/<url_prefix>')
-@log
 def data_formats(url_prefix):
     try:
         msg = formats[url_prefix]
@@ -41,6 +43,7 @@ def data_formats(url_prefix):
 
 app.register_blueprint(blueprints.db.bp)
 app.register_blueprint(blueprints.login.bp)
+app.register_blueprint(blueprints.sync.bp)
 
 
 import logging
