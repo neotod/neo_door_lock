@@ -5,3 +5,8 @@ class Events(enum.IntEnum):
     user_login = enum.auto()
     entry = enum.auto()
     user_change = enum.auto()
+
+class Settings(enum.IntEnum):
+    lock = enum.auto()
+    ltime_report = enum.auto()
+    ontime_report = enum.auto()

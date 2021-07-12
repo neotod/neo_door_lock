@@ -1,3 +1,4 @@
+import shutil
 import jdatetime
 
 from . import ids
@@ -7,24 +8,37 @@ def init(config):
     update_credentials(config['username'], config['password'])
 
 def read(json):
-    url = URLs['read']
-    res = send_request(url, json)
+    url = URLs['db']['read']
+    res = send_req(url, 'POST', json=json)
     return res['result']
 
 def insert(json):
-    url = URLs['insert']
-    res = send_request(url, json)
+    url = URLs['db']['insert']
+    res = send_req(url, 'POST', json=json)
     return res['result']
 
 def update(json):
-    url = URLs['update']
-    res = send_request(url, json)
+    url = URLs['db']['update']
+    res = send_req(url, 'POST', json=json)
     return res['result']
 
 def delete(json):
-    url = URLs['delete']
-    res = send_request(url, json)
+    url = URLs['db']['delete']
+    res = send_req(url, 'POST', json=json)
     return res['result']
+
+def backup():
+    url = URLs['db']['backup']
+    headers = {'X-API-KEY': credentials['api_key']}
+    try:
+        with get(url, headers=headers, stream=True) as r:
+            with open('datas/backup.db', 'wb') as f:
+                shutil.copyfileobj(r.raw, f)
+    except:
+        logger.exception("Can't get the backup file.")
+        return False
+
+    return True
 
 def report(event_id: ids.Events, more_info: str):
     now_date = str(jdatetime.datetime.now().date())
@@ -38,3 +52,16 @@ def report(event_id: ids.Events, more_info: str):
     }
     res = insert(data)
     return res
+
+def sync(data=None):
+    '''
+    if data == None then it will get sync info from the db_server
+    data = {'id': <setting_id>, 'is_on': <setting_state>}
+    '''
+
+    if data:
+        res = send_req(URLs['sync'], 'POST', json=data)
+    else:
+        res = send_req(URLs['sync'], 'GET')
+
+    return res['result']

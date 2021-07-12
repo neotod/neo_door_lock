@@ -1,19 +1,25 @@
 import time
-from requests import post
+import logging
+from requests import get, post
 
-from .exceptions import ServerUnreachable
+from .exceptions import *
 
+URL_MAIN = 'https://dbs-micro1400.fandogh.cloud'
 URLs = {
-    'read': 'https://dbs-neotod.fandogh.cloud/db/read',
-    'insert': 'https://dbs-neotod.fandogh.cloud/db/insert',
-    'update': 'https://dbs-neotod.fandogh.cloud/db/update',
-    'delete': 'https://dbs-neotod.fandogh.cloud/db/delete',
-
-    'login': 'https://dbs-neotod.fandogh.cloud/login'
+    'db': {
+        'read':   f'{URL_MAIN}/db/read',
+        'insert': f'{URL_MAIN}/db/insert',
+        'update': f'{URL_MAIN}/db/update',
+        'delete': f'{URL_MAIN}/db/delete',
+        'backup': f'{URL_MAIN}/db/backup'
+    },
+    'sync' : f'{URL_MAIN}/sync',
+    'login': f'{URL_MAIN}/login'
 }
 MAX_ATTEMPTS = 3
 
 credentials = {'username': '', 'password': '', 'api_key': ''}
+logger = logging.getLogger(__name__)
 
 def update_credentials(username, password):
     global credentials
@@ -29,16 +35,24 @@ def update_credentials(username, password):
             break
 
         if attempts == 0:
-            raise ServerUnreachable("Can't connect to db server to get the api key!", URLs['login'])
+            raise ServerUnreachable("Can't connect to db server to get the api key! (maybe username and password are wrong)", URLs['login'])
 
         attempts -= 1
         time.sleep(0.7)
 
-def send_request(url, json):
+def send_req(url, method, **kwargs):
     attempts = MAX_ATTEMPTS
     headers = {'X-API-KEY': credentials['api_key']}
     while True:
-        resp = post(url, json=json, headers=headers)
+        method = method.lower()
+        if method == 'get':
+            resp = get(url, headers=headers)
+            
+        elif method == 'post':
+            if 'json' not in kwargs:
+                raise JsonNeeded
+            else:
+                resp = post(url, json=kwargs['json'], headers=headers)
 
         if resp.status_code == 200:
             return resp.json()
