@@ -10,7 +10,7 @@ from flask import (
 )
 from flask.json import jsonify
 
-from ..utils.decors import log, check_bad_format
+from ..utils.decors import check_bad_format
 from ..utils import db
 
 logger = logging.getLogger(__name__)
@@ -18,7 +18,6 @@ bp = Blueprint('login', __name__)
 
 @bp.route('/login', methods=['POST'])
 @check_bad_format
-@log
 def login():
     username = request.form['username']
     password = request.form['password']

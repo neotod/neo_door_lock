@@ -1,22 +1,24 @@
+import os
 import logging
 from flask import (
     make_response,
     Blueprint, 
+    send_file,
     request, 
     g, 
 )
 from flask.json import jsonify
 
 from ..utils import db
-from ..utils.decors import check_errors, log, check_bad_format
+from ..utils.decors import *
 
 logger = logging.getLogger(__name__)
 bp = Blueprint('db', __name__, url_prefix='/db')
 
 @bp.route('/read', methods=['POST'])
-@check_errors
+@must_authenticate
+@json_required
 @check_bad_format
-@log
 def table_read():
     limit = 50
     conditions = None
@@ -46,9 +48,9 @@ def table_read():
         return make_response('Failed!\n', 500)
 
 @bp.route('/insert', methods=['POST'])
-@check_errors
+@must_authenticate
+@json_required
 @check_bad_format
-@log
 def table_insert():
     data = request.get_json()
 
@@ -73,9 +75,9 @@ def table_insert():
         return make_response('Failed!\n', 500)
 
 @bp.route('/update', methods=['POST'])
-@check_errors
+@must_authenticate
+@json_required
 @check_bad_format
-@log
 def table_update():
     data = request.get_json()
 
@@ -105,9 +107,9 @@ def table_update():
         return make_response('Failed!\n', 500)
 
 @bp.route('/delete', methods=['POST'])
-@check_errors
+@must_authenticate
+@json_required
 @check_bad_format
-@log
 def table_delete():
     data = request.get_json()
 
@@ -130,3 +132,9 @@ def table_delete():
         logger.error(f'DB_Connection: {g.db_conn} \n\t data: {data}')
 
         return make_response('Failed!\n', 500)
+
+@bp.route('/backup')
+@just_allow(['admin', 'bot'])
+@must_authenticate
+def backup():
+    return send_file(os.path.join(os.pardir, current_app.config['DB_PATH']), download_name='backup.db', mimetype='application/vnd.sqlite3', as_attachment=True)
