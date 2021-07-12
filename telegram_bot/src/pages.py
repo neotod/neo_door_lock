@@ -9,11 +9,15 @@ def make_pages():
     logout_btn = Button(Buttons.logout, 'خروج📛', Pages.welcome, 1)
 
     report_btn       = Button(Buttons.report, 'گزارش📃', Pages.report)
+    db_btn = Button(Buttons.db, 'دیتابیس🗂', Pages.db)
+    settings_btn        = Button(Buttons.settings, 'تنظیمات⚙', Pages.settings)
+
     day_report_btn   = Button(Buttons.day_report, 'گزارش امروز📗', Pages.main)
     month_report_btn = Button(Buttons.month_report, 'گزارش این ماه📕', Pages.main)
     year_report_btn  = Button(Buttons.year_report, 'گزارش این سال📘', Pages.main)
     
-    settings_btn        = Button(Buttons.settings, 'تنظیمات⚙', Pages.settings)
+    db_backup_btn = Button(Buttons.db_backup, 'بکاپ📥', Pages.main)
+
     settings_report_btn = Button(Buttons.settings_report, 'گزارش📜', Pages.settings_report)
     settings_lock_btn   = Button(Buttons.settings_lock, 'قفل هوشمند🔒', Pages.settings_lock)
 
@@ -63,6 +67,7 @@ def make_pages():
     
     main_btns = {
         report_btn.id_: report_btn, 
+        db_btn.id_: db_btn,
         settings_btn.id_: settings_btn,
         logout_btn.id_: logout_btn
     }
@@ -83,6 +88,17 @@ def make_pages():
 از این بخش میتونید تنظیمات بخش های مختلف قفل رو تغییر بدید.
     '''
     settings_page = Page(Pages.settings, settings_btns, text)
+
+
+    db_btns = {
+        db_backup_btn.id_: db_backup_btn,
+        Buttons.back: Button(Buttons.back, 'بازگشت↩', Pages.main, 1)
+    }
+    text = '''
+⏺️به طور کلی بهتر است بصورت هفتگی یا ماهیانه بکاپ دیتابیس را گرفته و آن را در یک جای امن نگه داری کنید.
+فایل خروجی بکاپ یک فایل با فرمت .db خواهد بود.
+    '''
+    db_page = Page(Pages.db, db_btns, text)
 
 
     report_btns = {
@@ -127,6 +143,7 @@ def make_pages():
         
         main_page.id_: main_page, 
         report_page.id_: report_page, 
+        db_page.id_: db_page,
         settings_page.id_: settings_page, 
 
         settings_report_page.id_: settings_report_page, 

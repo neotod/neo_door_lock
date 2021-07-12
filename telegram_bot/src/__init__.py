@@ -5,3 +5,5 @@ __all__ = [
 ]
 
 from . import classes, ids, pages
+
+pages.make_pages()

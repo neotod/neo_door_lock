@@ -26,8 +26,6 @@ MAX_SESSION_TIME = 5 * 60 # 5 mins
 DOCUMENT_DESTRUCTION_TIME = 30
 LOGS_PATH = os.path.join('datas', 'log.log')
 
-pages.make_pages()
-
 smart_lock = classes.Smart_Lock()
 current_user = None
 
@@ -36,15 +34,15 @@ cur_page_id = ids.Pages.welcome
 login_username_valid = True
 login_password_valid = True
 
-login_cur_username = 0
+login_cur_username = ''
 
 inline_query_message = None # the main message which is getting updated constantly
 chat_id = 0 # current chat (user with bot) id
 
 whereami = ['خانه🏠']
 
-# logging.basicConfig(filename=LOGS_PATH, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(filename=LOGS_PATH, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def start(update, context):
@@ -76,7 +74,10 @@ def start(update, context):
     else:
         query = update.callback_query
         chat_id = query.message.chat_id
-        inline_query_message = query.bot.send_message(chat_id, description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
+        if inline_query_message:
+            inline_query_message.edit_text(description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
+        else:
+            inline_query_message = query.bot.send_message(chat_id, description, parse_mode=PARSEMODE_HTML, reply_markup=InlineKeyboardMarkup(inline_btns))
         query.answer()
 
     user = update.effective_user
@@ -118,8 +119,9 @@ def inline_queries(update, context):
             query.answer(text='⚠لطفا اول لاگین کنید!', show_alert=True)
             return
 
-    chat_id = inline_query_message.chat_id
-    set_session_removal_task(context, chat_id) # everytime user interacts with the bot, session removal task will get removed
+    if current_user:
+        chat_id = inline_query_message.chat_id
+        set_session_removal_task(context, chat_id) # everytime user interacts with the bot, session removal task will get removed
 
 
     if button_id == ids.Buttons.logout or (button_id == ids.Buttons.back and (cur_page_id == ids.Pages.login_username or cur_page_id == ids.Pages.login_password)):
@@ -135,6 +137,18 @@ def inline_queries(update, context):
             context.job_queue.run_once(task, 5, name='temp_file_remove')
 
         if whereami[-1] == 'گزارش📃':
+            whereami.pop()
+    
+    elif button_id == ids.Buttons.db_backup:
+        file_made = output_backup(update, context)
+
+        if file_made:
+            remove_task_if_exists(context, 'backup_file_remove')
+
+            task = lambda _: os.remove('datas/backup.db')
+            context.job_queue.run_once(task, 5, name='temp_file_remove')
+
+        if whereami[-1] == 'دیتابیس🗂':
             whereami.pop()
 
     elif (cur_page_id == ids.Pages.settings_lock or cur_page_id == ids.Pages.settings_report) and button_id in pages.settings_switch_btns:
@@ -277,6 +291,9 @@ def settings_update(button_id):
         smart_lock.on = False if smart_lock.on else True # switch the state
         next_btn = pages.settings_switch_btns[ids.Buttons.settings_lock_off] if smart_lock.on else pages.settings_switch_btns[ids.Buttons.settings_lock_on]
 
+        setting_id = int(db_api.ids.Settings.lock)
+        sync_val = smart_lock.on
+
         if smart_lock.lreport_on:
             event_info = 'وضعیت فعلی: '
             event_info += 'فعال' if smart_lock.on else 'غیرفعال'
@@ -286,10 +303,19 @@ def settings_update(button_id):
         smart_lock.lreport_on = False if smart_lock.lreport_on else True # switch the state
         next_btn = pages.settings_switch_btns[ids.Buttons.settings_lreport_off] if smart_lock.lreport_on else pages.settings_switch_btns[ids.Buttons.settings_lreport_on]
 
+        setting_id = int(db_api.ids.Settings.ltime_report)
+        sync_val = smart_lock.lreport_on
+
     elif button_id == ids.Buttons.settings_oreport_switch:
         smart_lock.oreport_on = False if smart_lock.oreport_on else True # switch the state
         next_btn = pages.settings_switch_btns[ids.Buttons.settings_oreport_off] if smart_lock.oreport_on else pages.settings_switch_btns[ids.Buttons.settings_oreport_on]
 
+        setting_id = int(db_api.ids.Settings.ontime_report)
+        sync_val = smart_lock.oreport_on
+
+    db_api.sync(
+        {'setting_cols': {'is_on': int(sync_val)}, 'conditions': {'id': setting_id}}
+    )
     pages.bot_pages[cur_page_id].buttons[button_id].text = next_btn.text
 
 def settings_description_update(description):
@@ -305,6 +331,20 @@ def settings_description_update(description):
         description += 'فعال✅' if smart_lock.lreport_on else 'غیرفعال❌'
 
     return description
+
+def output_backup(update, context):
+    res = db_api.backup()
+    if res:
+        query = update.callback_query
+
+        cur_datetime = jdatetime.datetime.now()
+        file_name = f'backup_{str(cur_datetime)[:-7]}.db'.replace(':', '-').replace(' ', '_')
+
+        with open('datas/backup.db', 'rb') as f:
+            message = query.bot.send_document(chat_id, f, filename=file_name, caption='🛑 این فایل پس از سی ثانیه بصورت خودکار پاک خواهد شد.')
+            set_message_removal_task(context, message, DOCUMENT_DESTRUCTION_TIME)
+        
+    return res
 
 def output_report(update, context, button_id: ids.Buttons):
     global inline_query_message, db_conn
@@ -468,12 +508,37 @@ def logout(context):
     current_user = None
     login_cur_username = ''
 
-    inline_query_message = None
+    # inline_query_message = None
 
     remove_task_if_exists(context, chat_id)
     chat_id = 0
 
     whereami = ['خانه🏠']
+
+def sync():
+    settings = db_api.sync()
+
+    for s in settings:
+        if s['id'] == int(db_api.ids.Settings.lock):
+            smart_lock.on = bool(s['is_on'])
+            btn_id = ids.Buttons.settings_lock_switch
+            page_id = ids.Pages.settings_lock
+            next_btn = pages.settings_switch_btns[ids.Buttons.settings_lock_off] if bool(s['is_on']) else pages.settings_switch_btns[ids.Buttons.settings_lock_on]
+            
+        elif s['id'] == int(db_api.ids.Settings.ltime_report):
+            smart_lock.lreport_on = bool(s['is_on'])
+            btn_id = ids.Buttons.settings_lreport_switch
+            page_id = ids.Pages.settings_report
+            next_btn = pages.settings_switch_btns[ids.Buttons.settings_lreport_off] if bool(s['is_on']) else pages.settings_switch_btns[ids.Buttons.settings_lreport_on]
+            
+        elif s['id'] == int(db_api.ids.Settings.ontime_report):
+            smart_lock.oreport_on = bool(s['is_on'])
+            next_btn = pages.settings_switch_btns[ids.Buttons.settings_oreport_off] if bool(s['is_on']) else pages.settings_switch_btns[ids.Buttons.settings_oreport_on]
+            page_id = ids.Pages.settings_report
+            btn_id = ids.Buttons.settings_oreport_switch
+
+        pages.bot_pages[page_id].buttons[btn_id].text = next_btn.text
+        
 
 def main():
     global db_credentials
@@ -484,9 +549,11 @@ def main():
     db_config = config['db_api']
     db_api.init(db_config)
     
+    sync()
     # updater = Updater(token, request_kwargs={
     #     'proxy_url': 'socks5h://127.0.0.1:1081' # this ip:port of my outline client
     # })
+
     token = config['bot']['token']
     updater = Updater(token)
 
